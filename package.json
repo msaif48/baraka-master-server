@@ -1,2 +1,13 @@
-npm init -y
-npm install express cors
+{
+  "name": "baraka-master-server",
+  "version": "1.0.0",
+  "description": "Master License Server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
