@@ -8,19 +8,19 @@ app.use(express.json());
 const ADMIN_SECRET = "my_super_secret_admin_password_123";
 
 // ==========================================
-// 🗄️ UPSTASH CLOUD DB - CACHE PROOF
+// 🗄️ UPSTASH CLOUD DB - BULLETPROOF POST SYNTAX
 // ==========================================
 const readDB = async () => {
     try {
-        // FIXED: Changed to POST! Vercel is strictly forbidden from caching POST requests.
-        // This forces a fresh, real-time read from Upstash every single time.
-        const res = await fetch(`${process.env.KV_REST_API_URL}/get/licenses`, {
+        // We now send a POST to the root URL with the command in the body.
+        // This is 100% cache-proof and officially supported by Upstash.
+        const res = await fetch(`${process.env.KV_REST_API_URL}`, {
             method: 'POST',
             headers: { 
                 'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
-                'Cache-Control': 'no-store'
+                'Content-Type': 'application/json'
             },
-            cache: 'no-store'
+            body: JSON.stringify(["GET", "licenses"])
         });
         
         if (!res.ok) {
@@ -36,14 +36,16 @@ const readDB = async () => {
 };
 
 const saveDB = async (data) => {
-    const res = await fetch(`${process.env.KV_REST_API_URL}/set/licenses`, {
+    // We send the SET command in the body as well!
+    const res = await fetch(`${process.env.KV_REST_API_URL}`, {
         method: 'POST',
         headers: { 
             'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify(data) 
+        body: JSON.stringify(["SET", "licenses", JSON.stringify(data)]) 
     });
+    
     if (!res.ok) {
         const errText = await res.text();
         throw new Error(`Status ${res.status} - ${errText}`);
