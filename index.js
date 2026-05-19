@@ -90,8 +90,13 @@ app.post('/admin/generate-key', (req, res) => {
 // 3. ADMIN ROUTE: Lock a Client out
 // ==========================================
 app.post('/admin/revoke-key', (req, res) => {
-    const { adminPassword, licenseKey } = req.body;
-    if (adminPassword !== ADMIN_SECRET) return res.status(401).json({ error: "Unauthorized" });
+    // Check both payload names just like the generate route!
+    const secretProvided = req.body.adminSecret || req.body.adminPassword;
+    const { licenseKey } = req.body;
+    
+    if (secretProvided !== ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
 
     const clients = readDB();
     const licenseIndex = clients.findIndex(c => c.key === licenseKey);
@@ -103,6 +108,3 @@ app.post('/admin/revoke-key', (req, res) => {
     
     res.json({ message: `Client locked out successfully.` });
 });
-
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`📡 Baraka Master Server running on port ${PORT}`));
