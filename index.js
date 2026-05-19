@@ -1,7 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
 const app = express();
 
 app.use(cors());
@@ -9,26 +7,38 @@ app.use(express.json());
 
 const ADMIN_SECRET = "my_super_secret_admin_password_123";
 
-// 🗄️ THE PERMANENT DATABASE LOGIC
-const DB_FILE = path.join(__dirname, 'master_database.json');
-
-// Helper function to read the database
-const readDB = () => {
-    if (!fs.existsSync(DB_FILE)) return []; // If file doesn't exist, return empty array
-    return JSON.parse(fs.readFileSync(DB_FILE));
+// ==========================================
+// 🗄️ DIRECT UPSTASH CLOUD DB (NO PACKAGES NEEDED)
+// ==========================================
+const readDB = async () => {
+    try {
+        const res = await fetch(`${process.env.KV_REST_API_URL}/get/licenses`, {
+            headers: { 'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}` }
+        });
+        const data = await res.json();
+        return data.result ? JSON.parse(data.result) : [];
+    } catch (e) {
+        return [];
+    }
 };
 
-// Helper function to save to the database
-const saveDB = (data) => {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+const saveDB = async (data) => {
+    try {
+        await fetch(`${process.env.KV_REST_API_URL}/set/licenses`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}` },
+            body: JSON.stringify(data) 
+        });
+    } catch (e) {}
 };
 
 // ==========================================
 // 1. CLIENT ROUTE: What the POS software pings
 // ==========================================
-app.post('/api/verify-license', (req, res) => {
+app.post('/api/verify-license', async (req, res) => {
     const { licenseKey } = req.body;
-    const clients = readDB(); // Read fresh from the hard drive
+    
+    const clients = await readDB();
     const license = clients.find(c => c.key === licenseKey);
 
     if (!license) return res.status(404).json({ error: "Invalid License Key." });
@@ -40,8 +50,7 @@ app.post('/api/verify-license', (req, res) => {
 // ==========================================
 // 2. ADMIN ROUTE: Generate a new Key
 // ==========================================
-app.post('/admin/generate-key', (req, res) => {
-    // 1. Security Check (accepts either old or new payload names)
+app.post('/admin/generate-key', async (req, res) => {
     const secretProvided = req.body.adminSecret || req.body.adminPassword; 
     const { clientName, duration, unit, exactDate, daysValid } = req.body;
     
@@ -49,15 +58,11 @@ app.post('/admin/generate-key', (req, res) => {
         return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // 2. --- NEW TIME ENGINE ---
     let expiryDate = new Date();
     
     if (exactDate) {
-        // Mode 1: Admin picked an exact calendar date & time
         expiryDate = new Date(exactDate);
     } else {
-        // Mode 2: Admin picked an amount of Days, Hours, or Minutes
-        // (Falls back to the old 'daysValid' if you use an older Postman request)
         const amount = parseInt(duration) || parseInt(daysValid) || 30; 
         const timeUnit = unit || 'days';
 
@@ -66,11 +71,10 @@ app.post('/admin/generate-key', (req, res) => {
         } else if (timeUnit === 'hours') {
             expiryDate.setHours(expiryDate.getHours() + amount);
         } else {
-            expiryDate.setDate(expiryDate.getDate() + amount); // defaults to days
+            expiryDate.setDate(expiryDate.getDate() + amount);
         }
     }
 
-    // 3. Forge the New License
     const newLicense = {
         key: `BB-${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
         client: clientName || "Unknown Client",
@@ -78,10 +82,9 @@ app.post('/admin/generate-key', (req, res) => {
         active: true
     };
 
-    // 4. Save to Vercel/KV Database
-    const clients = readDB(); 
+    const clients = await readDB(); 
     clients.push(newLicense); 
-    saveDB(clients);          
+    await saveDB(clients);
     
     res.json({ message: "Key Generated successfully", data: newLicense });
 });
@@ -89,8 +92,7 @@ app.post('/admin/generate-key', (req, res) => {
 // ==========================================
 // 3. ADMIN ROUTE: Lock a Client out
 // ==========================================
-app.post('/admin/revoke-key', (req, res) => {
-    // Check both payload names just like the generate route!
+app.post('/admin/revoke-key', async (req, res) => {
     const secretProvided = req.body.adminSecret || req.body.adminPassword;
     const { licenseKey } = req.body;
     
@@ -98,13 +100,16 @@ app.post('/admin/revoke-key', (req, res) => {
         return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const clients = readDB();
+    const clients = await readDB();
     const licenseIndex = clients.findIndex(c => c.key === licenseKey);
     
     if (licenseIndex === -1) return res.status(404).json({ error: "Key not found." });
 
-    clients[licenseIndex].active = false; // Lock them out
-    saveDB(clients); // Save the change permanently!
+    clients[licenseIndex].active = false; 
+    await saveDB(clients); 
     
     res.json({ message: `Client locked out successfully.` });
 });
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log(`📡 Baraka Master Server running on port ${PORT}`));
