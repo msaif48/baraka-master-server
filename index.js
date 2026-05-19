@@ -8,12 +8,17 @@ app.use(express.json());
 const ADMIN_SECRET = "my_super_secret_admin_password_123";
 
 // ==========================================
-// 🗄️ DIRECT UPSTASH CLOUD DB (NO PACKAGES NEEDED)
+// 🗄️ CACHE-BUSTING UPSTASH CLOUD DB
 // ==========================================
 const readDB = async () => {
     try {
-        const res = await fetch(`${process.env.KV_REST_API_URL}/get/licenses`, {
-            headers: { 'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}` }
+        // We added a timestamp (?_t) and 'no-store' so Vercel is FORCED to fetch fresh data!
+        const res = await fetch(`${process.env.KV_REST_API_URL}/get/licenses?_t=${Date.now()}`, {
+            headers: { 
+                'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
+                'Cache-Control': 'no-cache, no-store'
+            },
+            cache: 'no-store'
         });
         const data = await res.json();
         return data.result ? JSON.parse(data.result) : [];
@@ -26,7 +31,10 @@ const saveDB = async (data) => {
     try {
         await fetch(`${process.env.KV_REST_API_URL}/set/licenses`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}` },
+            headers: { 
+                'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(data) 
         });
     } catch (e) {}
