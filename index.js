@@ -8,16 +8,16 @@ app.use(express.json());
 const ADMIN_SECRET = "my_super_secret_admin_password_123";
 
 // ==========================================
-// 🗄️ CACHE-BUSTING UPSTASH CLOUD DB WITH ERROR LOGS
+// 🗄️ UPSTASH CLOUD DB 
 // ==========================================
 const readDB = async () => {
     try {
-        const res = await fetch(`${process.env.KV_REST_API_URL}/get/licenses?_t=${Date.now()}`, {
+        // FIXED: Removed the '?_t=' so Upstash looks for the exact "licenses" key!
+        const res = await fetch(`${process.env.KV_REST_API_URL}/get/licenses`, {
             headers: { 
                 'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
-                'Cache-Control': 'no-cache, no-store'
-            },
-            cache: 'no-store'
+                'Cache-Control': 'no-cache'
+            }
         });
         if (!res.ok) {
             console.error(`🔴 Upstash Read Error: Status ${res.status}`);
@@ -98,7 +98,7 @@ app.post('/admin/generate-key', async (req, res) => {
     try {
         const clients = await readDB(); 
         clients.push(newLicense); 
-        await saveDB(clients); // This will now throw an error if it fails!
+        await saveDB(clients); 
         res.json({ message: "Key Generated successfully", data: newLicense });
     } catch (dbError) {
         console.error("🔴 Database Save Failure:", dbError.message);
