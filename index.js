@@ -8,11 +8,10 @@ app.use(express.json());
 const ADMIN_SECRET = "my_super_secret_admin_password_123";
 
 // ==========================================
-// 🗄️ CACHE-BUSTING UPSTASH CLOUD DB
+// 🗄️ CACHE-BUSTING UPSTASH CLOUD DB WITH ERROR LOGS
 // ==========================================
 const readDB = async () => {
     try {
-        // We added a timestamp (?_t) and 'no-store' so Vercel is FORCED to fetch fresh data!
         const res = await fetch(`${process.env.KV_REST_API_URL}/get/licenses?_t=${Date.now()}`, {
             headers: { 
                 'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
@@ -20,24 +19,31 @@ const readDB = async () => {
             },
             cache: 'no-store'
         });
+        if (!res.ok) {
+            console.error(`🔴 Upstash Read Error: Status ${res.status}`);
+            return [];
+        }
         const data = await res.json();
         return data.result ? JSON.parse(data.result) : [];
     } catch (e) {
+        console.error("🔴 Upstash Read Exception:", e.message);
         return [];
     }
 };
 
 const saveDB = async (data) => {
-    try {
-        await fetch(`${process.env.KV_REST_API_URL}/set/licenses`, {
-            method: 'POST',
-            headers: { 
-                'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data) 
-        });
-    } catch (e) {}
+    const res = await fetch(`${process.env.KV_REST_API_URL}/set/licenses`, {
+        method: 'POST',
+        headers: { 
+            'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data) 
+    });
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Status ${res.status} - ${errText}`);
+    }
 };
 
 // ==========================================
@@ -67,7 +73,6 @@ app.post('/admin/generate-key', async (req, res) => {
     }
 
     let expiryDate = new Date();
-    
     if (exactDate) {
         expiryDate = new Date(exactDate);
     } else {
@@ -90,11 +95,15 @@ app.post('/admin/generate-key', async (req, res) => {
         active: true
     };
 
-    const clients = await readDB(); 
-    clients.push(newLicense); 
-    await saveDB(clients);
-    
-    res.json({ message: "Key Generated successfully", data: newLicense });
+    try {
+        const clients = await readDB(); 
+        clients.push(newLicense); 
+        await saveDB(clients); // This will now throw an error if it fails!
+        res.json({ message: "Key Generated successfully", data: newLicense });
+    } catch (dbError) {
+        console.error("🔴 Database Save Failure:", dbError.message);
+        res.status(500).json({ error: `Cloud Database Rejected Save: ${dbError.message}` });
+    }
 });
 
 // ==========================================
@@ -108,15 +117,17 @@ app.post('/admin/revoke-key', async (req, res) => {
         return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const clients = await readDB();
-    const licenseIndex = clients.findIndex(c => c.key === licenseKey);
-    
-    if (licenseIndex === -1) return res.status(404).json({ error: "Key not found." });
+    try {
+        const clients = await readDB();
+        const licenseIndex = clients.findIndex(c => c.key === licenseKey);
+        if (licenseIndex === -1) return res.status(404).json({ error: "Key not found." });
 
-    clients[licenseIndex].active = false; 
-    await saveDB(clients); 
-    
-    res.json({ message: `Client locked out successfully.` });
+        clients[licenseIndex].active = false; 
+        await saveDB(clients); 
+        res.json({ message: `Client locked out successfully.` });
+    } catch (dbError) {
+        res.status(500).json({ error: `Database Revoke Failure: ${dbError.message}` });
+    }
 });
 
 const PORT = process.env.PORT || 3001;
