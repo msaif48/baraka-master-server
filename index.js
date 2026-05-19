@@ -41,22 +41,47 @@ app.post('/api/verify-license', (req, res) => {
 // 2. ADMIN ROUTE: Generate a new Key
 // ==========================================
 app.post('/admin/generate-key', (req, res) => {
-    const { adminPassword, clientName, daysValid } = req.body;
-    if (adminPassword !== ADMIN_SECRET) return res.status(401).json({ error: "Unauthorized" });
+    // 1. Security Check (accepts either old or new payload names)
+    const secretProvided = req.body.adminSecret || req.body.adminPassword; 
+    const { clientName, duration, unit, exactDate, daysValid } = req.body;
+    
+    if (secretProvided !== ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    const now = new Date();
-    const expiry = new Date(now.getTime() + (daysValid * 24 * 60 * 60 * 1000));
+    // 2. --- NEW TIME ENGINE ---
+    let expiryDate = new Date();
+    
+    if (exactDate) {
+        // Mode 1: Admin picked an exact calendar date & time
+        expiryDate = new Date(exactDate);
+    } else {
+        // Mode 2: Admin picked an amount of Days, Hours, or Minutes
+        // (Falls back to the old 'daysValid' if you use an older Postman request)
+        const amount = parseInt(duration) || parseInt(daysValid) || 30; 
+        const timeUnit = unit || 'days';
 
+        if (timeUnit === 'minutes') {
+            expiryDate.setMinutes(expiryDate.getMinutes() + amount);
+        } else if (timeUnit === 'hours') {
+            expiryDate.setHours(expiryDate.getHours() + amount);
+        } else {
+            expiryDate.setDate(expiryDate.getDate() + amount); // defaults to days
+        }
+    }
+
+    // 3. Forge the New License
     const newLicense = {
         key: `BB-${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
-        client: clientName,
-        validUntil: expiry.toISOString(),
+        client: clientName || "Unknown Client",
+        validUntil: expiryDate.toISOString(),
         active: true
     };
 
-    const clients = readDB(); // Get current clients
-    clients.push(newLicense); // Add the new one
-    saveDB(clients);          // Save it permanently!
+    // 4. Save to Vercel/KV Database
+    const clients = readDB(); 
+    clients.push(newLicense); 
+    saveDB(clients);          
     
     res.json({ message: "Key Generated successfully", data: newLicense });
 });
