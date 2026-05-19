@@ -8,17 +8,21 @@ app.use(express.json());
 const ADMIN_SECRET = "my_super_secret_admin_password_123";
 
 // ==========================================
-// 🗄️ UPSTASH CLOUD DB 
+// 🗄️ UPSTASH CLOUD DB - CACHE PROOF
 // ==========================================
 const readDB = async () => {
     try {
-        // FIXED: Removed the '?_t=' so Upstash looks for the exact "licenses" key!
+        // FIXED: Changed to POST! Vercel is strictly forbidden from caching POST requests.
+        // This forces a fresh, real-time read from Upstash every single time.
         const res = await fetch(`${process.env.KV_REST_API_URL}/get/licenses`, {
+            method: 'POST',
             headers: { 
                 'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
-                'Cache-Control': 'no-cache'
-            }
+                'Cache-Control': 'no-store'
+            },
+            cache: 'no-store'
         });
+        
         if (!res.ok) {
             console.error(`🔴 Upstash Read Error: Status ${res.status}`);
             return [];
