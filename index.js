@@ -5,11 +5,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const ADMIN_SECRET = "my_super_secret_admin_password_123"; // Make sure this matches your HTML!
+const ADMIN_SECRET = "my_super_secret_admin_password_123";
 
-// ==========================================
-// 🗄️ UPSTASH CLOUD DB - BULLETPROOF POST
-// ==========================================
 const readDB = async () => {
     try {
         const res = await fetch(`${process.env.KV_REST_API_URL}`, {
@@ -33,7 +30,38 @@ const saveDB = async (data) => {
 };
 
 // ==========================================
-// 1. CLIENT ROUTE (What the POS checks every 30s)
+// 1. POS ROUTE: Activate License (with Usage Limits!)
+// ==========================================
+app.post('/api/activate-license', async (req, res) => {
+    const { key, action } = req.body; // Action can be 'activate' or 'verify'
+    
+    const clients = await readDB();
+    const licenseIndex = clients.findIndex(c => c.key === key);
+
+    if (licenseIndex === -1) return res.status(404).json({ error: "Invalid License Key." });
+    
+    const license = clients[licenseIndex];
+    if (!license.active) return res.status(403).json({ error: "License locked by Admin." });
+
+    // Ensure backwards compatibility for older keys that don't have these fields
+    license.maxUses = license.maxUses || 1; 
+    license.useCount = license.useCount || 0;
+
+    // If the POS is explicitly asking to ACTIVATE (consume a use)
+    if (action === 'activate') {
+        if (license.useCount >= license.maxUses) {
+            return res.status(403).json({ error: "This License Key has reached its maximum activation limit." });
+        }
+        // Consume a use and save it back to the database
+        clients[licenseIndex].useCount += 1;
+        await saveDB(clients);
+    }
+
+    res.json({ valid: true, validUntil: license.validUntil, client: license.client });
+});
+
+// ==========================================
+// 2. POS ROUTE: Verify License (The 15s Heartbeat)
 // ==========================================
 app.post('/api/verify-license', async (req, res) => {
     const { licenseKey } = req.body;
@@ -43,15 +71,16 @@ app.post('/api/verify-license', async (req, res) => {
     if (!license) return res.status(404).json({ error: "Invalid License Key." });
     if (!license.active) return res.status(403).json({ error: "License locked by Admin." });
 
+    // The heartbeat just checks if the key exists and is active. It does NOT consume a use.
     res.json({ valid: true, validUntil: license.validUntil, client: license.client });
 });
 
 // ==========================================
-// 2. ADMIN ROUTE: Generate Key
+// 3. ADMIN ROUTE: Generate Key
 // ==========================================
 app.post('/admin/generate-key', async (req, res) => {
     const secretProvided = req.body.adminSecret; 
-    const { clientName, duration, unit, exactDate } = req.body;
+    const { clientName, duration, unit, exactDate, maxUses } = req.body;
     if (secretProvided !== ADMIN_SECRET) return res.status(401).json({ error: "Unauthorized" });
 
     let expiryDate = new Date();
@@ -68,7 +97,9 @@ app.post('/admin/generate-key', async (req, res) => {
         key: `BB-${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
         client: clientName || "Unknown Client",
         validUntil: expiryDate.toISOString(),
-        active: true
+        active: true,
+        maxUses: parseInt(maxUses) || 1, // Default to 1 use if not provided
+        useCount: 0 // Starts at 0
     };
 
     try {
@@ -80,8 +111,20 @@ app.post('/admin/generate-key', async (req, res) => {
 });
 
 // ==========================================
-// 3. ADMIN ROUTE: Revoke (Kill) Key
+// 4. ADMIN ROUTE: View All Licenses
 // ==========================================
+app.post('/admin/view-licenses', async (req, res) => {
+    const secretProvided = req.body.adminSecret;
+    if (secretProvided !== ADMIN_SECRET) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+        const clients = await readDB();
+        // Send the entire array of licenses back to the admin dashboard
+        res.json({ licenses: clients });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ... keep your existing revoke, resume, and extend routes exactly as they are below this point ...
 app.post('/admin/revoke-key', async (req, res) => {
     const secretProvided = req.body.adminSecret;
     const { licenseKey } = req.body;
@@ -98,9 +141,6 @@ app.post('/admin/revoke-key', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ==========================================
-// 4. ADMIN ROUTE: Resume (Un-Kill) Key
-// ==========================================
 app.post('/admin/resume-key', async (req, res) => {
     const secretProvided = req.body.adminSecret;
     const { licenseKey } = req.body;
@@ -117,9 +157,6 @@ app.post('/admin/resume-key', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ==========================================
-// 5. ADMIN ROUTE: Extend Key Validity
-// ==========================================
 app.post('/admin/extend-key', async (req, res) => {
     const secretProvided = req.body.adminSecret;
     const { licenseKey, duration, unit, exactDate } = req.body;
@@ -132,8 +169,6 @@ app.post('/admin/extend-key', async (req, res) => {
 
         let currentExpiry = new Date(clients[licenseIndex].validUntil);
         const now = new Date();
-        
-        // If the key was already expired in the past, start the new timer from RIGHT NOW
         if (currentExpiry < now) currentExpiry = now;
 
         if (exactDate) {
@@ -147,13 +182,9 @@ app.post('/admin/extend-key', async (req, res) => {
             clients[licenseIndex].validUntil = currentExpiry.toISOString();
         }
         
-        clients[licenseIndex].active = true; // Automatically un-revoke if we are extending it!
+        clients[licenseIndex].active = true; 
         await saveDB(clients); 
-        
-        res.json({ 
-            message: `License extended successfully.`, 
-            newExpiry: clients[licenseIndex].validUntil 
-        });
+        res.json({ message: `License extended successfully.`, newExpiry: clients[licenseIndex].validUntil });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
