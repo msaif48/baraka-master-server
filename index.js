@@ -134,6 +134,19 @@ app.post('/admin/view-licenses', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+const newLicense = {
+        key: `BB-${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
+        client: clientName || "Unknown Client",
+        validUntil: expiryDate.toISOString(),
+        active: true,
+        maxUses: parseInt(maxUses) || 1,
+        useCount: 0,
+        // --- ADD THESE NEW FIELDS ---
+        planType: req.body.planType || "basic", // 'trial', 'basic', or 'pro'
+        maxUsers: req.body.maxUsers || 3,       // Enforce user limits
+        hasReports: req.body.hasReports || false // Feature limits
+    };
+
 // 🛑 CRITICAL FIX FOR VERCEL 🛑
 // Do NOT use app.listen(). Export the Express app so Vercel can route it.
 module.exports = app;
