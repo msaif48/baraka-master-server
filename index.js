@@ -42,9 +42,11 @@ app.get('/', (req, res) => {
 app.post('/api/activate-license', async (req, res) => {
     const { key, action } = req.body;
     
+    // --- HARDCODED TEST KEY FOR DEBUGGING ---
     if (key === 'BB-TEST') {
         return res.json({ valid: true, validUntil: "2099-12-31T23:59:59.000Z", client: "Local Test Debug" });
     }
+    // ----------------------------------------
 
     const clients = await readDB();
     const licenseIndex = clients.findIndex(c => c.key === key);
@@ -92,7 +94,7 @@ app.post('/api/verify-license', async (req, res) => {
 // ==========================================
 app.post('/admin/generate-key', async (req, res) => {
     const secretProvided = req.body.adminSecret; 
-    const { clientName, duration, unit, exactDate, maxUses } = req.body;
+    const { clientName, duration, unit, exactDate, maxUses, planType, maxUsers, hasReports } = req.body;
     if (secretProvided !== ADMIN_SECRET) return res.status(401).json({ error: "Unauthorized" });
 
     let expiryDate = new Date();
@@ -105,7 +107,7 @@ app.post('/admin/generate-key', async (req, res) => {
         else expiryDate.setDate(expiryDate.getDate() + amount);
     }
 
-    // ✅ FIXED: SaaS Fields correctly injected into the route
+    // ✅ SAAS Fields are safely inside the route now!
     const newLicense = {
         key: `BB-${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
         client: clientName || "Unknown Client",
@@ -113,9 +115,9 @@ app.post('/admin/generate-key', async (req, res) => {
         active: true,
         maxUses: parseInt(maxUses) || 1,
         useCount: 0,
-        planType: req.body.planType || "basic", 
-        maxUsers: req.body.maxUsers || 3,       
-        hasReports: req.body.hasReports || false 
+        planType: planType || "basic", 
+        maxUsers: maxUsers || 3,       
+        hasReports: hasReports || false 
     };
 
     try {
@@ -136,4 +138,6 @@ app.post('/admin/view-licenses', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 🛑 CRITICAL FIX FOR VERCEL 🛑
+// Do NOT use app.listen(). Export the Express app so Vercel can route it.
 module.exports = app;
