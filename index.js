@@ -30,7 +30,7 @@ const saveDB = async (data) => {
 };
 
 // ==========================================
-// 0. HEALTH CHECK ROUTE 
+// 0. HEALTH CHECK ROUTE
 // ==========================================
 app.get('/', (req, res) => {
     res.send('✅ Baraka Master Server is Live and Routing Correctly!');
@@ -44,7 +44,7 @@ app.post('/api/activate-license', async (req, res) => {
     
     // --- HARDCODED TEST KEY FOR DEBUGGING ---
     if (key === 'BB-TEST') {
-        return res.json({ valid: true, validUntil: "2099-12-31T23:59:59.000Z", client: "Local Test Debug" });
+        return res.json({ valid: true, validUntil: "2099-12-31T23:59:59.000Z", client: "Local Test Debug", planType: "premium", maxUsers: 99 });
     }
     // ----------------------------------------
 
@@ -67,7 +67,13 @@ app.post('/api/activate-license', async (req, res) => {
         await saveDB(clients);
     }
 
-    res.json({ valid: true, validUntil: license.validUntil, client: license.client });
+    res.json({ 
+        valid: true, 
+        validUntil: license.validUntil, 
+        client: license.client,
+        planType: license.planType || 'basic',
+        maxUsers: license.maxUsers || 1
+    });
 });
 
 // ==========================================
@@ -77,7 +83,7 @@ app.post('/api/verify-license', async (req, res) => {
     const { licenseKey } = req.body;
     
     if (licenseKey === 'BB-TEST') {
-        return res.json({ valid: true, validUntil: "2099-12-31T23:59:59.000Z", client: "Local Test Debug" });
+        return res.json({ valid: true, validUntil: "2099-12-31T23:59:59.000Z", client: "Local Test Debug", planType: "premium", maxUsers: 99 });
     }
 
     const clients = await readDB();
@@ -86,15 +92,24 @@ app.post('/api/verify-license', async (req, res) => {
     if (!license) return res.status(404).json({ error: "Invalid License Key." });
     if (!license.active) return res.status(403).json({ error: "License locked by Admin." });
 
-    res.json({ valid: true, validUntil: license.validUntil, client: license.client });
+    res.json({ 
+        valid: true, 
+        validUntil: license.validUntil, 
+        client: license.client,
+        planType: license.planType || 'basic',
+        maxUsers: license.maxUsers || 1
+    });
 });
 
 // ==========================================
-// ADMIN ROUTES (WITH SAAS FIELDS)
+// ADMIN ROUTES
 // ==========================================
 app.post('/admin/generate-key', async (req, res) => {
     const secretProvided = req.body.adminSecret; 
+    
+    // ✅ SAAS VARIABLES EXTRACTED HERE
     const { clientName, duration, unit, exactDate, maxUses, planType, maxUsers, hasReports } = req.body;
+    
     if (secretProvided !== ADMIN_SECRET) return res.status(401).json({ error: "Unauthorized" });
 
     let expiryDate = new Date();
@@ -107,7 +122,7 @@ app.post('/admin/generate-key', async (req, res) => {
         else expiryDate.setDate(expiryDate.getDate() + amount);
     }
 
-    // ✅ SAAS Fields are safely inside the route now!
+    // ✅ SAAS VARIABLES SAVED SAFELY INSIDE THE ROUTE
     const newLicense = {
         key: `BB-${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
         client: clientName || "Unknown Client",
@@ -116,7 +131,7 @@ app.post('/admin/generate-key', async (req, res) => {
         maxUses: parseInt(maxUses) || 1,
         useCount: 0,
         planType: planType || "basic", 
-        maxUsers: maxUsers || 3,       
+        maxUsers: maxUsers || 3,        
         hasReports: hasReports || false 
     };
 
