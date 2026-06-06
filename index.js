@@ -144,6 +144,21 @@ app.post('/admin/resume-key', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ✅ THE FIX: The new endpoint to reset device activations!
+app.post('/admin/reset-uses', async (req, res) => {
+    if (req.body.adminSecret !== ADMIN_SECRET) return res.status(401).json({ error: "Unauthorized" });
+    try {
+        const clients = await readDB();
+        const index = clients.findIndex(c => c.key === req.body.licenseKey);
+        if (index === -1) return res.status(404).json({ error: "Key not found." });
+        
+        clients[index].useCount = 0; // Resets the activation counter back to 0
+        await saveDB(clients);
+        
+        res.json({ message: "Device activations reset to 0. The key is unlocked!" });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/admin/extend-key', async (req, res) => {
     if (req.body.adminSecret !== ADMIN_SECRET) return res.status(401).json({ error: "Unauthorized" });
     try {
