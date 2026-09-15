@@ -7,23 +7,31 @@ app.use(express.json());
 
 const ADMIN_SECRET = "my_super_secret_admin_password_123";
 
+// Auto-detect which env vars Vercel provided (prefixed or unprefixed)
+const KV_URL   = process.env.KV_REST_API_URL   || process.env.barakalic_KV_REST_API_URL;
+const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.barakalic_KV_REST_API_TOKEN;
+
+if (!KV_URL || !KV_TOKEN) {
+    console.error('❌ Missing KV env vars. Available:', Object.keys(process.env).filter(k => k.includes('KV') || k.includes('REST')));
+}
+
 const readDB = async () => {
     try {
-        const res = await fetch(`${process.env.KV_REST_API_URL}`, {
+        const res = await fetch(`${KV_URL}`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`, 'Content-Type': 'application/json' },
+            headers: { 'Authorization': `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(["GET", "licenses"])
         });
         if (!res.ok) return [];
         const data = await res.json();
         return data.result ? JSON.parse(data.result) : [];
-    } catch (e) { return []; }
+    } catch (e) { console.error('readDB error:', e.message); return []; }
 };
 
 const saveDB = async (data) => {
-    const res = await fetch(`${process.env.KV_REST_API_URL}`, {
+    const res = await fetch(`${KV_URL}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(["SET", "licenses", JSON.stringify(data)]) 
     });
     if (!res.ok) throw new Error(`Status ${res.status}`);
