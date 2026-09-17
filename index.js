@@ -11,6 +11,7 @@ const ADMIN_SECRET = "my_super_secret_admin_password_123";
 const KV_URL   = process.env.barakalic_KV_REST_API_URL   || process.env.KV_REST_API_URL;
 const KV_TOKEN = process.env.barakalic_KV_REST_API_TOKEN || process.env.KV_REST_API_TOKEN;
 
+console.log('KV_URL present:', !!KV_URL, '| KV_TOKEN present:', !!KV_TOKEN);
 if (!KV_URL || !KV_TOKEN) {
     console.error('❌ Missing KV env vars. Available:', Object.keys(process.env).filter(k => k.includes('KV') || k.includes('REST')));
 }
